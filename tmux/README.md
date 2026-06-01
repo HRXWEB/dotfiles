@@ -8,22 +8,10 @@
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 ```
 
-### 2. Sync only tmux config (not other dotfiles)
-
-This repo uses [GNU Stow](https://www.gnu.org/software/stow/) for dotfile management. To sync **only tmux** without touching other configs:
+### 2. Sync with stow
 
 ```bash
-# Create target directory first
-mkdir -p ~/.config/tmux
-
-# Stow only the tmux package into ~/.config/tmux/
-stow --target=$HOME/.config/tmux -d /path/to/dotfiles/tmux .
-```
-
-Or simply symlink the whole directory:
-
-```bash
-ln -s /path/to/dotfiles/tmux ~/.config/tmux
+stow --target=$HOME/.config/tmux tmux
 ```
 
 ### 3. Install plugins
