@@ -199,6 +199,30 @@ local function get_cache_path(job)
   return Url(tostring(base)), nil
 end
 
+local function parent_dir_of(path)
+  local s = tostring(path or "")
+  return s:match("^(.*)/[^/]+$") or "."
+end
+
+local function log_cache_diag(job, cache_path, stage, extra)
+  local parent = parent_dir_of(cache_path)
+  local msg = string.format(
+    "faster-piper: diag stage=%s file=%s cache=%s parent=%s cache_exists=%s parent_exists=%s w=%s h=%s",
+    tostring(stage),
+    tostring(job and job.file and job.file.url or "nil"),
+    tostring(cache_path),
+    parent,
+    tostring(fs.cha(cache_path) ~= nil),
+    tostring(fs.cha(Url(parent)) ~= nil),
+    tostring(job and job.area and job.area.w or "nil"),
+    tostring(job and job.area and job.area.h or "nil")
+  )
+  if extra and extra ~= "" then
+    msg = msg .. " " .. extra
+  end
+  ya.err(msg)
+end
+
 local function lock_path_for(cache_path)
   local app_id = ya.id and ya.id("app") or nil
 
@@ -357,6 +381,7 @@ end
 ----------------------------------------------------------------------
 local function generate_cache(job, cache_path)
   local source_path = fs_path(job.file.url)
+  log_cache_diag(job, cache_path, "generate:start")
 
   -- 1) Decide template: job.args[1] or cached header
   local tpl = job.args and job.args[1]
@@ -370,18 +395,21 @@ local function generate_cache(job, cache_path)
         tpl = hdr.cmd
       else
         -- header invalid -> cannot recover recipe
+        log_cache_diag(job, cache_path, "generate:reuse-header-failed", "header_err=" .. tostring(herr))
         ya.err("faster-piper: cache header invalid; cannot reuse recipe: " .. tostring(herr))
       end
     end
   end
 
   if not tpl or tpl == "" then
+    log_cache_diag(job, cache_path, "generate:missing-template")
     ya.err("faster-piper: missing generator command template (job.args[1]) and no usable cached header")
     return false
   end
 
   -- Guard: template must be single-line for env passing + header layout
   if tpl:find("\n", 1, true) then
+    log_cache_diag(job, cache_path, "generate:bad-template", "reason=newline-in-template")
     ya.err("faster-piper: command template contains newline; unsupported")
     return false
   end
@@ -424,6 +452,7 @@ local function generate_cache(job, cache_path)
     :spawn()
 
   if not child then
+    log_cache_diag(job, cache_path, "generate:spawn-failed", "err=" .. tostring(err))
     ya.err("faster-piper: failed to spawn: " .. tostring(err))
     fs.remove("file", cache_path)
     fs.remove("file", tmp_url)
@@ -432,6 +461,7 @@ local function generate_cache(job, cache_path)
 
   local output, werr = child:wait_with_output()
   if not output then
+    log_cache_diag(job, cache_path, "generate:wait-failed", "err=" .. tostring(werr))
     ya.err("faster-piper: wait failed: " .. tostring(werr))
     fs.remove("file", cache_path)
     fs.remove("file", tmp_url)
@@ -439,6 +469,7 @@ local function generate_cache(job, cache_path)
   end
 
   if not output.status.success then
+    log_cache_diag(job, cache_path, "generate:command-failed", "code=" .. tostring(output.status.code))
     ya.err("faster-piper: command failed (code=" .. tostring(output.status.code) .. "): " .. tostring(output.stderr))
     fs.remove("file", cache_path)
     fs.remove("file", tmp_url)
@@ -448,6 +479,7 @@ local function generate_cache(job, cache_path)
   -- 4) Sanity-check the newly written header
   local hdr, herr = read_cache_header(cache_path)
   if not hdr then
+    log_cache_diag(job, cache_path, "generate:header-sanity-failed", "header_err=" .. tostring(herr))
     ya.err("faster-piper: wrote cache but header sanity-check failed: " .. tostring(herr))
     fs.remove("file", cache_path)
     return false
@@ -619,6 +651,12 @@ function M:peek(job)
     if not ok then
       -- If the cache file exists, we can self-heal (resize case) by reusing cmd from header.
       if fs.cha(cache_path) then
+        local diag_hdr, diag_herr = read_cache_header(cache_path)
+        if not diag_hdr then
+          log_cache_diag(job, cache_path, "peek:stale-existing-cache", "header_err=" .. tostring(diag_herr))
+        else
+          log_cache_diag(job, cache_path, "peek:stale-existing-cache", "cached_w=" .. tostring(diag_hdr.w) .. " cached_nline=" .. tostring(diag_hdr.nline))
+        end
         local ensured, ewhy = ensure_cache(job)
         if ensured then
           cache_path = ensured

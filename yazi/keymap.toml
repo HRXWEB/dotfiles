@@ -2,3 +2,8 @@
 on   = [ "g", "o" ]
 run  = 'shell "open ."'
 desc = "Open current dir in Finder"
+
+[[mgr.prepend_keymap]]
+on   = "F"
+run  = "plugin smart-filter"
+desc = "Smart filter"
