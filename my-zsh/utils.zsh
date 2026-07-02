@@ -112,5 +112,10 @@ export VIMINIT="source ~/.config/vim/.vimrc"
 notify() {
   local title="${1:-通知}"
   local body="${2:-任务已完成}"
-  printf "\ePtmux;\e\e]777;notify;%s;%s\a\e\\\\" "$title" "$body"
+  if [[ -n "$TMUX" ]]; then
+    printf "\ePtmux;\e\e]777;notify;%s;%s\a\e\\\\" "$title" "$body"
+    return
+  fi
+
+  command cmux notify --title "$title" --body "$body"
 }
